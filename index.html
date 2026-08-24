@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Color Match</title>
+<style>
+  :root {
+    --bg: #111318;
+    --panel: #1b1e26;
+    --text: #eef0f4;
+    --muted: #8a90a0;
+    --accent: #4f7cff;
+    --danger: #e5533d;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  #app {
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 14px 16px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid #262a35;
+  }
+
+  #stage {
+    flex: 1;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+  }
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 14px;
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  #placeholder p {
+    max-width: 280px;
+    line-height: 1.5;
+    margin: 0;
+    font-size: 14px;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 22px;
+    cursor: pointer;
+  }
+
+  #startBtn {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  #startBtn:active {
+    opacity: 0.85;
+  }
+
+  footer {
+    padding: 14px 16px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    border-top: 1px solid #262a35;
+    background: var(--panel);
+  }
+
+  #switchBtn {
+    background: #2a2e3a;
+    color: var(--text);
+  }
+
+  #status {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(20, 22, 28, 0.85);
+    color: var(--danger);
+    font-size: 13px;
+    line-height: 1.4;
+    display: none;
+  }
+
+  #status.visible {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>Color Match - Camera</header>
+
+  <div id="stage">
+    <video id="video" autoplay playsinline muted></video>
+
+    <div id="placeholder">
+      <p>Camera access is needed to sample colors from your clothes.</p>
+      <button id="startBtn">Start camera</button>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <footer>
+    <button id="switchBtn" style="display:none;">Switch camera</button>
+  </footer>
+</div>
+
+<script>
+  const video = document.getElementById('video');
+  const startBtn = document.getElementById('startBtn');
+  const switchBtn = document.getElementById('switchBtn');
+  const placeholder = document.getElementById('placeholder');
+  const statusEl = document.getElementById('status');
+
+  let currentStream = null;
+  let facingMode = 'environment'; // rear camera by default
+
+  function showStatus(message) {
+    statusEl.textContent = message;
+    statusEl.classList.add('visible');
+  }
+
+  function hideStatus() {
+    statusEl.classList.remove('visible');
+  }
+
+  function stopCurrentStream() {
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => track.stop());
+      currentStream = null;
+    }
+  }
+
+  async function startCamera() {
+    hideStatus();
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showStatus('This browser does not support camera access. Try a recent version of Chrome or Safari.');
+      return;
+    }
+
+    stopCurrentStream();
+
+    const constraints = {
+      video: {
+        facingMode: { ideal: facingMode },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    };
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      currentStream = stream;
+      video.srcObject = stream;
+      placeholder.style.display = 'none';
+      switchBtn.style.display = 'inline-block';
+    } catch (err) {
+      if (err.name === 'NotAllowedError') {
+        showStatus('Camera permission was denied. Enable camera access for this site in your browser settings.');
+      } else if (err.name === 'NotFoundError') {
+        showStatus('No camera was found on this device.');
+      } else {
+        showStatus('Could not start the camera: ' + err.message);
+      }
+    }
+  }
+
+  startBtn.addEventListener('click', startCamera);
+
+  switchBtn.addEventListener('click', () => {
+    facingMode = (facingMode === 'environment') ? 'user' : 'environment';
+    startCamera();
+  });
+
+  window.addEventListener('beforeunload', stopCurrentStream);
+</script>
+</body>
+</html>
