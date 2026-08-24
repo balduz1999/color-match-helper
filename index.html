@@ -97,10 +97,12 @@
   footer {
     padding: 14px 16px;
     display: flex;
+    align-items: center;
     justify-content: center;
     gap: 12px;
     border-top: 1px solid #262a35;
     background: var(--panel);
+    min-height: 64px;
   }
 
   #switchBtn {
@@ -120,10 +122,57 @@
     font-size: 13px;
     line-height: 1.4;
     display: none;
+    z-index: 5;
   }
 
   #status.visible {
     display: block;
+  }
+
+  /* Tap marker shown briefly where the user tapped */
+  #tapMarker {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    margin-left: -17px;
+    margin-top: -17px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    pointer-events: none;
+    display: none;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+  }
+
+  /* Swatch readout in the footer */
+  #swatchReadout {
+    display: none;
+    align-items: center;
+    gap: 12px;
+  }
+
+  #swatchColor {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+  }
+
+  #swatchText {
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+
+  #swatchText strong {
+    color: var(--text);
+    font-size: 14px;
+    display: block;
+  }
+
+  #hint {
+    color: var(--muted);
+    font-size: 13px;
   }
 </style>
 </head>
@@ -139,20 +188,41 @@
       <button id="startBtn">Start camera</button>
     </div>
 
+    <div id="tapMarker"></div>
     <div id="status"></div>
   </div>
 
   <footer>
+    <span id="hint" style="display:none;">Tap the video to sample a color</span>
+    <div id="swatchReadout">
+      <div id="swatchColor"></div>
+      <div id="swatchText">
+        <strong id="swatchHex">-</strong>
+        <span id="swatchRgb">-</span>
+      </div>
+    </div>
     <button id="switchBtn" style="display:none;">Switch camera</button>
   </footer>
 </div>
 
+<!-- Hidden canvas used only to read pixel data from the current video frame -->
+<canvas id="captureCanvas" style="display:none;"></canvas>
+
 <script>
   const video = document.getElementById('video');
+  const stage = document.getElementById('stage');
   const startBtn = document.getElementById('startBtn');
   const switchBtn = document.getElementById('switchBtn');
   const placeholder = document.getElementById('placeholder');
   const statusEl = document.getElementById('status');
+  const tapMarker = document.getElementById('tapMarker');
+  const hint = document.getElementById('hint');
+  const swatchReadout = document.getElementById('swatchReadout');
+  const swatchColor = document.getElementById('swatchColor');
+  const swatchHex = document.getElementById('swatchHex');
+  const swatchRgb = document.getElementById('swatchRgb');
+  const canvas = document.getElementById('captureCanvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
   let currentStream = null;
   let facingMode = 'environment'; // rear camera by default
@@ -198,6 +268,7 @@
       video.srcObject = stream;
       placeholder.style.display = 'none';
       switchBtn.style.display = 'inline-block';
+      hint.style.display = 'inline';
     } catch (err) {
       if (err.name === 'NotAllowedError') {
         showStatus('Camera permission was denied. Enable camera access for this site in your browser settings.');
@@ -214,6 +285,115 @@
   switchBtn.addEventListener('click', () => {
     facingMode = (facingMode === 'environment') ? 'user' : 'environment';
     startCamera();
+  });
+
+  // Converts a tap position on the visible video element into a pixel
+  // coordinate on the underlying video frame, accounting for object-fit: cover
+  // (the video is often cropped to fill its container, so displayed size and
+  // actual frame size do not match 1:1).
+  function mapTapToVideoCoords(tapX, tapY) {
+    const rect = video.getBoundingClientRect();
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+
+    if (!videoWidth || !videoHeight) return null;
+
+    const displayWidth = rect.width;
+    const displayHeight = rect.height;
+
+    const videoRatio = videoWidth / videoHeight;
+    const displayRatio = displayWidth / displayHeight;
+
+    let renderedWidth, renderedHeight, offsetX, offsetY;
+
+    if (videoRatio > displayRatio) {
+      // Video is wider than the display box: height fills, width overflows and is cropped
+      renderedHeight = displayHeight;
+      renderedWidth = displayHeight * videoRatio;
+      offsetX = (renderedWidth - displayWidth) / 2;
+      offsetY = 0;
+    } else {
+      // Video is taller than the display box: width fills, height overflows and is cropped
+      renderedWidth = displayWidth;
+      renderedHeight = displayWidth / videoRatio;
+      offsetX = 0;
+      offsetY = (renderedHeight - displayHeight) / 2;
+    }
+
+    const xInRendered = tapX - rect.left + offsetX;
+    const yInRendered = tapY - rect.top + offsetY;
+
+    const scale = videoWidth / renderedWidth;
+
+    const videoX = xInRendered * scale;
+    const videoY = yInRendered * scale;
+
+    return { x: Math.round(videoX), y: Math.round(videoY) };
+  }
+
+  function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Draws the current video frame to the hidden canvas, then averages a small
+  // patch of pixels around the tapped point (rather than a single pixel) to
+  // reduce sensor noise and compression artifacts.
+  function sampleColorAt(videoX, videoY) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const patchSize = 10;
+    const half = Math.floor(patchSize / 2);
+
+    const startX = Math.max(0, Math.min(canvas.width - patchSize, videoX - half));
+    const startY = Math.max(0, Math.min(canvas.height - patchSize, videoY - half));
+
+    const imageData = ctx.getImageData(startX, startY, patchSize, patchSize);
+    const data = imageData.data;
+
+    let rSum = 0, gSum = 0, bSum = 0;
+    const pixelCount = patchSize * patchSize;
+
+    for (let i = 0; i < data.length; i += 4) {
+      rSum += data[i];
+      gSum += data[i + 1];
+      bSum += data[i + 2];
+    }
+
+    return {
+      r: Math.round(rSum / pixelCount),
+      g: Math.round(gSum / pixelCount),
+      b: Math.round(bSum / pixelCount)
+    };
+  }
+
+  function showTapMarker(x, y) {
+    tapMarker.style.left = x + 'px';
+    tapMarker.style.top = y + 'px';
+    tapMarker.style.display = 'block';
+  }
+
+  function displaySwatch(rgb) {
+    const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+    swatchColor.style.background = hex;
+    swatchHex.textContent = hex.toUpperCase();
+    swatchRgb.textContent = 'RGB ' + rgb.r + ', ' + rgb.g + ', ' + rgb.b;
+    swatchReadout.style.display = 'flex';
+    hint.style.display = 'none';
+  }
+
+  stage.addEventListener('click', (event) => {
+    if (!currentStream) return;
+
+    const rect = stage.getBoundingClientRect();
+    showTapMarker(event.clientX - rect.left, event.clientY - rect.top);
+
+    const videoCoords = mapTapToVideoCoords(event.clientX, event.clientY);
+    if (!videoCoords) return;
+
+    const rgb = sampleColorAt(videoCoords.x, videoCoords.y);
+    displaySwatch(rgb);
   });
 
   window.addEventListener('beforeunload', stopCurrentStream);
