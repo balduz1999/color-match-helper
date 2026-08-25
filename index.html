@@ -12,6 +12,8 @@
     --muted: #8a90a0;
     --accent: #4f7cff;
     --danger: #e5533d;
+    --good: #3fb872;
+    --warn: #d9a441;
     --chip-bg: #262a35;
   }
 
@@ -162,12 +164,45 @@
     z-index: 4;
   }
 
-  /* Bottom panel holding calibration status, the swatch list, and controls */
+  /* Bottom panel holding item tabs, calibration status, swatches, controls */
   #panel {
     background: var(--panel);
     border-top: 1px solid #262a35;
     padding: 12px 14px 16px;
     flex-shrink: 0;
+    max-height: 62vh;
+    overflow-y: auto;
+  }
+
+  #tabRow {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .tabBtn {
+    flex: 1;
+    background: #20232c;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+    font-size: 13px;
+  }
+
+  .tabBtn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .tabDot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.3);
+    background: #000;
   }
 
   #calibRow {
@@ -285,6 +320,7 @@
     display: flex;
     gap: 10px;
     justify-content: center;
+    margin-bottom: 10px;
   }
 
   #undoBtn {
@@ -305,6 +341,114 @@
   #resetBtn:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+
+  #compareBtn {
+    width: 100%;
+    background: var(--good);
+    color: #06210f;
+    font-size: 15px;
+    padding: 13px;
+  }
+
+  #compareBtn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  /* Comparison result modal */
+  #compareModal {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 9, 12, 0.92);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 20;
+  }
+
+  #compareModal.visible {
+    display: flex;
+  }
+
+  #compareSheet {
+    width: 100%;
+    max-width: 480px;
+    background: var(--panel);
+    border-radius: 18px 18px 0 0;
+    padding: 20px 18px 26px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+
+  #compareSheet h2 {
+    margin: 0 0 14px;
+    font-size: 16px;
+    text-align: center;
+  }
+
+  #comparePair {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+
+  #comparePair .pairSwatch {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+
+  #comparePair .pairVs {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  #verdictBadge {
+    display: block;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 12px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+  }
+
+  .badge-good { background: rgba(63, 184, 114, 0.18); color: var(--good); }
+  .badge-warn { background: rgba(217, 164, 65, 0.18); color: var(--warn); }
+  .badge-bold { background: rgba(79, 124, 255, 0.18); color: var(--accent); }
+
+  #verdictDetail {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 14px;
+    text-align: center;
+  }
+
+  #accentNotes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .accentNote {
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--chip-bg);
+    color: var(--text);
+  }
+
+  #closeCompareBtn {
+    width: 100%;
+    background: #2a2e3a;
+    color: var(--text);
   }
 </style>
 </head>
@@ -327,6 +471,15 @@
   </div>
 
   <div id="panel">
+    <div id="tabRow">
+      <button class="tabBtn active" id="tabA" data-item="A">
+        <span class="tabDot" id="tabDotA"></span> Item A
+      </button>
+      <button class="tabBtn" id="tabB" data-item="B">
+        <span class="tabDot" id="tabDotB"></span> Item B
+      </button>
+    </div>
+
     <div id="calibRow">
       <div id="calibSwatch"></div>
       <div id="calibText">
@@ -343,6 +496,19 @@
       <button id="undoBtn" disabled>Undo last</button>
       <button id="resetBtn" disabled>Reset</button>
     </div>
+
+    <button id="compareBtn" disabled>Compare Item A vs Item B</button>
+  </div>
+</div>
+
+<div id="compareModal">
+  <div id="compareSheet">
+    <h2>Match result</h2>
+    <div id="comparePair"></div>
+    <div id="verdictBadge"></div>
+    <div id="verdictDetail"></div>
+    <div id="accentNotes"></div>
+    <button id="closeCompareBtn">Close</button>
   </div>
 </div>
 
@@ -366,16 +532,30 @@
   const chipRow = document.getElementById('chipRow');
   const undoBtn = document.getElementById('undoBtn');
   const resetBtn = document.getElementById('resetBtn');
+  const compareBtn = document.getElementById('compareBtn');
+  const tabA = document.getElementById('tabA');
+  const tabB = document.getElementById('tabB');
+  const tabDotA = document.getElementById('tabDotA');
+  const tabDotB = document.getElementById('tabDotB');
+  const compareModal = document.getElementById('compareModal');
+  const comparePair = document.getElementById('comparePair');
+  const verdictBadge = document.getElementById('verdictBadge');
+  const verdictDetail = document.getElementById('verdictDetail');
+  const accentNotes = document.getElementById('accentNotes');
+  const closeCompareBtn = document.getElementById('closeCompareBtn');
   const canvas = document.getElementById('captureCanvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
   let currentStream = null;
   let facingMode = 'environment'; // rear camera by default
 
-  // Ordered list of sampled (and, if a reference is set, corrected) colors
-  // for the garment currently being captured. Position carries meaning:
-  // index 0 is the main/field color, every following entry is an accent.
-  let swatches = [];
+  // Two independent capture slots. Each holds an ordered list of swatches;
+  // position carries meaning (index 0 = main/field color, rest = accents).
+  let items = {
+    A: { swatches: [] },
+    B: { swatches: [] }
+  };
+  let activeItem = 'A';
 
   // Raw RGB read from the white reference card. Used to correct every
   // garment sample for the current lighting. Null means uncalibrated.
@@ -582,11 +762,31 @@
     updateCalibDisplay();
   });
 
-  // Renders the chip list from the swatches array. Label is derived purely
-  // from position: the first swatch is always "Main", every later one is
-  // "Accent N". This means removing the main swatch promotes the next one,
-  // which matches how the app treats the list (first = field color).
+  // --- Item tabs -------------------------------------------------------
+
+  function setActiveItem(itemKey) {
+    activeItem = itemKey;
+    tabA.classList.toggle('active', itemKey === 'A');
+    tabB.classList.toggle('active', itemKey === 'B');
+    renderChips();
+  }
+
+  tabA.addEventListener('click', () => setActiveItem('A'));
+  tabB.addEventListener('click', () => setActiveItem('B'));
+
+  function updateTabDots() {
+    const mainA = items.A.swatches[0];
+    const mainB = items.B.swatches[0];
+    tabDotA.style.background = mainA ? mainA.hex : '#000';
+    tabDotB.style.background = mainB ? mainB.hex : '#000';
+  }
+
+  // --- Swatch capture ----------------------------------------------------
+
+  // Renders the chip list for the active item. Label is derived purely from
+  // position: index 0 is always "Main", every later one is "Accent N".
   function renderChips() {
+    const swatches = items[activeItem].swatches;
     chipRow.innerHTML = '';
 
     swatches.forEach((swatch, index) => {
@@ -608,30 +808,33 @@
     resetBtn.disabled = swatches.length === 0;
 
     if (swatches.length === 0) {
-      hint.textContent = "Tap the garment's main color to start. Tap again anywhere to add an accent color.";
+      hint.textContent = "Tap " + activeItem + "'s main color to start. Tap again anywhere to add an accent color.";
     } else if (swatches.length >= MAX_SWATCHES) {
       hint.textContent = 'Maximum of ' + MAX_SWATCHES + ' colors reached. Remove one to add another.';
     } else {
       hint.textContent = 'Tap to add an accent color, or remove one below.';
     }
+
+    updateTabDots();
+    updateCompareAvailability();
   }
 
   chipRow.addEventListener('click', (event) => {
     const target = event.target;
     if (target.classList.contains('removeBtn')) {
       const index = parseInt(target.getAttribute('data-index'), 10);
-      swatches.splice(index, 1);
+      items[activeItem].swatches.splice(index, 1);
       renderChips();
     }
   });
 
   undoBtn.addEventListener('click', () => {
-    swatches.pop();
+    items[activeItem].swatches.pop();
     renderChips();
   });
 
   resetBtn.addEventListener('click', () => {
-    swatches = [];
+    items[activeItem].swatches = [];
     renderChips();
   });
 
@@ -655,6 +858,7 @@
       return;
     }
 
+    const swatches = items[activeItem].swatches;
     if (swatches.length >= MAX_SWATCHES) return;
 
     const corrected = applyWhiteCorrection(raw);
@@ -662,6 +866,200 @@
 
     swatches.push({ r: corrected.r, g: corrected.g, b: corrected.b, hex: hex });
     renderChips();
+  });
+
+  // --- Color science: RGB -> LAB -> LCh ----------------------------------
+  // Needed to reason about hue and chroma, which is what color-harmony
+  // rules are actually based on. Plain RGB distance does not correspond to
+  // perceived hue relationships.
+
+  function srgbChannelToLinear(c) {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  }
+
+  function rgbToXyz(r, g, b) {
+    const rl = srgbChannelToLinear(r);
+    const gl = srgbChannelToLinear(g);
+    const bl = srgbChannelToLinear(b);
+
+    // sRGB (D65) to XYZ matrix
+    const x = rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375;
+    const y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750;
+    const z = rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041;
+
+    return { x: x * 100, y: y * 100, z: z * 100 };
+  }
+
+  function xyzToLab(x, y, z) {
+    // D65 reference white
+    const refX = 95.047, refY = 100.0, refZ = 108.883;
+
+    const f = (t) => t > 0.008856 ? Math.cbrt(t) : (7.787 * t) + (16 / 116);
+
+    const fx = f(x / refX);
+    const fy = f(y / refY);
+    const fz = f(z / refZ);
+
+    return {
+      l: (116 * fy) - 16,
+      a: 500 * (fx - fy),
+      b: 200 * (fy - fz)
+    };
+  }
+
+  function rgbToLch(r, g, b) {
+    const xyz = rgbToXyz(r, g, b);
+    const lab = xyzToLab(xyz.x, xyz.y, xyz.z);
+
+    const c = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
+    let h = Math.atan2(lab.b, lab.a) * (180 / Math.PI);
+    if (h < 0) h += 360;
+
+    return { l: lab.l, c: c, h: h };
+  }
+
+  // Shortest distance between two hues on the 360-degree color wheel,
+  // always returned as a value between 0 and 180.
+  function hueDistance(h1, h2) {
+    const diff = Math.abs(h1 - h2) % 360;
+    return diff > 180 ? 360 - diff : diff;
+  }
+
+  // --- Matching rules ------------------------------------------------
+
+  const NEUTRAL_CHROMA = 12;      // below this, a color reads as neutral (black/white/grey/navy-ish)
+  const HUE_ANALOGOUS = 20;       // within this, same color family
+  const HUE_NEAR_MISS_MAX = 45;   // the "looks accidental" danger zone
+  const HUE_COMPLEMENT_MIN = 150; // opposite-ish on the wheel
+  const HUE_COMPLEMENT_MAX = 210;
+  const ACCENT_ECHO_HUE = 15;     // how close two accents/mains need to be to read as an intentional echo
+  const ACCENT_MIN_CHROMA = 10;   // below this an "accent" is really just another neutral, not worth flagging
+
+  function compareMains(lchA, lchB) {
+    const neutralA = lchA.c < NEUTRAL_CHROMA;
+    const neutralB = lchB.c < NEUTRAL_CHROMA;
+
+    if (neutralA || neutralB) {
+      return {
+        level: 'good',
+        headline: 'Safe pairing',
+        detail: 'One of these is close to neutral (black, white, grey, navy or beige), which pairs cleanly with almost anything.'
+      };
+    }
+
+    const hueDiff = hueDistance(lchA.h, lchB.h);
+    const chromaDiff = Math.abs(lchA.c - lchB.c);
+
+    if (hueDiff <= HUE_ANALOGOUS) {
+      return {
+        level: 'good',
+        headline: 'Analogous - same color family',
+        detail: 'These sit close together on the color wheel, so they read as a coordinated, harmonious pairing.'
+      };
+    }
+
+    if (hueDiff >= HUE_COMPLEMENT_MIN && hueDiff <= HUE_COMPLEMENT_MAX) {
+      return {
+        level: 'bold',
+        headline: 'Complementary - bold contrast',
+        detail: 'These sit close to opposite each other on the color wheel. High contrast, reads as a deliberate choice rather than an accident.'
+      };
+    }
+
+    if (hueDiff <= HUE_NEAR_MISS_MAX && chromaDiff < 25) {
+      return {
+        level: 'warn',
+        headline: 'Risky - near miss',
+        detail: 'These are close in hue but not close enough to read as matching, and not far enough to read as intentional contrast. This is the combination most likely to look like a mistake.'
+      };
+    }
+
+    return {
+      level: 'warn',
+      headline: 'Different color families',
+      detail: 'These are moderately far apart on the color wheel without being a strong contrast pair. It can work, but it is the least predictable combination - worth checking in good light.'
+    };
+  }
+
+  // Looks for accent colors in one item that closely echo a color (main or
+  // accent) in the other item. An echo is one of the strongest, safest ways
+  // to make an outfit look deliberate.
+  function findAccentEchoes(itemA, itemB) {
+    const notes = [];
+
+    function checkDirection(sourceItem, sourceLabel, targetItem, targetLabel) {
+      sourceItem.swatches.forEach((sourceSwatch, sourceIndex) => {
+        if (sourceIndex === 0) return; // only accents are "echoes", not the main color itself
+        const sourceLch = rgbToLch(sourceSwatch.r, sourceSwatch.g, sourceSwatch.b);
+        if (sourceLch.c < ACCENT_MIN_CHROMA) return;
+
+        targetItem.swatches.forEach((targetSwatch, targetIndex) => {
+          const targetLch = rgbToLch(targetSwatch.r, targetSwatch.g, targetSwatch.b);
+          if (targetLch.c < ACCENT_MIN_CHROMA) return;
+
+          if (hueDistance(sourceLch.h, targetLch.h) <= ACCENT_ECHO_HUE) {
+            const targetRole = targetIndex === 0 ? 'main color' : 'accent';
+            notes.push(
+              sourceLabel + "'s accent color echoes " + targetLabel + "'s " + targetRole +
+              ' - a deliberate-looking pairing.'
+            );
+          }
+        });
+      });
+    }
+
+    checkDirection(itemA, 'Item A', itemB, 'Item B');
+    checkDirection(itemB, 'Item B', itemA, 'Item A');
+
+    return notes;
+  }
+
+  function updateCompareAvailability() {
+    compareBtn.disabled = items.A.swatches.length === 0 || items.B.swatches.length === 0;
+  }
+
+  compareBtn.addEventListener('click', () => {
+    const mainA = items.A.swatches[0];
+    const mainB = items.B.swatches[0];
+    if (!mainA || !mainB) return;
+
+    const lchA = rgbToLch(mainA.r, mainA.g, mainA.b);
+    const lchB = rgbToLch(mainB.r, mainB.g, mainB.b);
+
+    const verdict = compareMains(lchA, lchB);
+    const notes = findAccentEchoes(items.A, items.B);
+
+    comparePair.innerHTML =
+      '<div class="pairSwatch" style="background:' + mainA.hex + ';"></div>' +
+      '<div class="pairVs">vs</div>' +
+      '<div class="pairSwatch" style="background:' + mainB.hex + ';"></div>';
+
+    const badgeClass = verdict.level === 'good' ? 'badge-good' : (verdict.level === 'bold' ? 'badge-bold' : 'badge-warn');
+    verdictBadge.className = badgeClass;
+    verdictBadge.textContent = verdict.headline;
+    verdictDetail.textContent = verdict.detail;
+
+    accentNotes.innerHTML = '';
+    notes.forEach((note) => {
+      const div = document.createElement('div');
+      div.className = 'accentNote';
+      div.textContent = note;
+      accentNotes.appendChild(div);
+    });
+
+    if (!whiteReference) {
+      const div = document.createElement('div');
+      div.className = 'accentNote';
+      div.textContent = 'No white reference was set for this session - readings may be skewed by the current light.';
+      accentNotes.appendChild(div);
+    }
+
+    compareModal.classList.add('visible');
+  });
+
+  closeCompareBtn.addEventListener('click', () => {
+    compareModal.classList.remove('visible');
   });
 
   window.addEventListener('beforeunload', stopCurrentStream);
