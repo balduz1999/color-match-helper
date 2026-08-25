@@ -12,6 +12,7 @@
     --muted: #8a90a0;
     --accent: #4f7cff;
     --danger: #e5533d;
+    --chip-bg: #262a35;
   }
 
   * { box-sizing: border-box; }
@@ -46,6 +47,7 @@
     position: relative;
     background: #000;
     overflow: hidden;
+    min-height: 0;
   }
 
   video {
@@ -77,37 +79,23 @@
 
   button {
     font-family: inherit;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     border: none;
-    border-radius: 12px;
-    padding: 14px 22px;
+    border-radius: 10px;
+    padding: 11px 18px;
     cursor: pointer;
   }
 
   #startBtn {
     background: var(--accent);
     color: #fff;
+    font-size: 15px;
+    padding: 14px 22px;
   }
 
   #startBtn:active {
     opacity: 0.85;
-  }
-
-  footer {
-    padding: 14px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    border-top: 1px solid #262a35;
-    background: var(--panel);
-    min-height: 64px;
-  }
-
-  #switchBtn {
-    background: #2a2e3a;
-    color: var(--text);
   }
 
   #status {
@@ -143,36 +131,112 @@
     box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
   }
 
-  /* Swatch readout in the footer */
-  #swatchReadout {
-    display: none;
-    align-items: center;
-    gap: 12px;
-  }
-
-  #swatchColor {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.15);
-    flex-shrink: 0;
-  }
-
-  #swatchText {
-    font-size: 13px;
-    line-height: 1.4;
-    color: var(--muted);
-  }
-
-  #swatchText strong {
+  #switchBtn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(20, 22, 28, 0.85);
     color: var(--text);
-    font-size: 14px;
-    display: block;
+    display: none;
+    z-index: 4;
+  }
+
+  /* Bottom panel holding the swatch list and controls */
+  #panel {
+    background: var(--panel);
+    border-top: 1px solid #262a35;
+    padding: 12px 14px 16px;
+    flex-shrink: 0;
   }
 
   #hint {
     color: var(--muted);
     font-size: 13px;
+    text-align: center;
+    padding: 6px 0 10px;
+  }
+
+  #chipRow {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    min-height: 68px;
+  }
+
+  .chip {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: var(--chip-bg);
+    border-radius: 12px;
+    padding: 8px;
+    width: 76px;
+    position: relative;
+  }
+
+  .chip .swatchBox {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+
+  .chip .chipLabel {
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  .chip .chipHex {
+    font-size: 10px;
+    color: var(--text);
+  }
+
+  .chip .removeBtn {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--danger);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  #controlRow {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  #undoBtn {
+    background: #2a2e3a;
+    color: var(--text);
+  }
+
+  #undoBtn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  #resetBtn {
+    background: #2a2e3a;
+    color: var(--danger);
+  }
+
+  #resetBtn:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 </style>
 </head>
@@ -190,19 +254,17 @@
 
     <div id="tapMarker"></div>
     <div id="status"></div>
+    <button id="switchBtn">Switch camera</button>
   </div>
 
-  <footer>
-    <span id="hint" style="display:none;">Tap the video to sample a color</span>
-    <div id="swatchReadout">
-      <div id="swatchColor"></div>
-      <div id="swatchText">
-        <strong id="swatchHex">-</strong>
-        <span id="swatchRgb">-</span>
-      </div>
+  <div id="panel">
+    <div id="hint">Tap the garment's main color to start. Tap again anywhere to add an accent color.</div>
+    <div id="chipRow"></div>
+    <div id="controlRow">
+      <button id="undoBtn" disabled>Undo last</button>
+      <button id="resetBtn" disabled>Reset</button>
     </div>
-    <button id="switchBtn" style="display:none;">Switch camera</button>
-  </footer>
+  </div>
 </div>
 
 <!-- Hidden canvas used only to read pixel data from the current video frame -->
@@ -217,15 +279,21 @@
   const statusEl = document.getElementById('status');
   const tapMarker = document.getElementById('tapMarker');
   const hint = document.getElementById('hint');
-  const swatchReadout = document.getElementById('swatchReadout');
-  const swatchColor = document.getElementById('swatchColor');
-  const swatchHex = document.getElementById('swatchHex');
-  const swatchRgb = document.getElementById('swatchRgb');
+  const chipRow = document.getElementById('chipRow');
+  const undoBtn = document.getElementById('undoBtn');
+  const resetBtn = document.getElementById('resetBtn');
   const canvas = document.getElementById('captureCanvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
   let currentStream = null;
   let facingMode = 'environment'; // rear camera by default
+
+  // Ordered list of sampled colors for the garment currently being captured.
+  // Position carries meaning: index 0 is the main/field color, every
+  // following entry is an accent (e.g. a stripe or trim color).
+  let swatches = [];
+
+  const MAX_SWATCHES = 6;
 
   function showStatus(message) {
     statusEl.textContent = message;
@@ -268,7 +336,6 @@
       video.srcObject = stream;
       placeholder.style.display = 'none';
       switchBtn.style.display = 'inline-block';
-      hint.style.display = 'inline';
     } catch (err) {
       if (err.name === 'NotAllowedError') {
         showStatus('Camera permission was denied. Enable camera access for this site in your browser settings.');
@@ -307,13 +374,11 @@
     let renderedWidth, renderedHeight, offsetX, offsetY;
 
     if (videoRatio > displayRatio) {
-      // Video is wider than the display box: height fills, width overflows and is cropped
       renderedHeight = displayHeight;
       renderedWidth = displayHeight * videoRatio;
       offsetX = (renderedWidth - displayWidth) / 2;
       offsetY = 0;
     } else {
-      // Video is taller than the display box: width fills, height overflows and is cropped
       renderedWidth = displayWidth;
       renderedHeight = displayWidth / videoRatio;
       offsetX = 0;
@@ -374,17 +439,63 @@
     tapMarker.style.display = 'block';
   }
 
-  function displaySwatch(rgb) {
-    const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
-    swatchColor.style.background = hex;
-    swatchHex.textContent = hex.toUpperCase();
-    swatchRgb.textContent = 'RGB ' + rgb.r + ', ' + rgb.g + ', ' + rgb.b;
-    swatchReadout.style.display = 'flex';
-    hint.style.display = 'none';
+  // Renders the chip list from the swatches array. Label is derived purely
+  // from position: the first swatch is always "Main", every later one is
+  // "Accent N". This means removing the main swatch promotes the next one,
+  // which matches how the app treats the list (first = field color).
+  function renderChips() {
+    chipRow.innerHTML = '';
+
+    swatches.forEach((swatch, index) => {
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+
+      const label = index === 0 ? 'Main' : ('Accent ' + index);
+
+      chip.innerHTML =
+        '<div class="swatchBox" style="background:' + swatch.hex + ';"></div>' +
+        '<div class="chipLabel">' + label + '</div>' +
+        '<div class="chipHex">' + swatch.hex.toUpperCase() + '</div>' +
+        '<button class="removeBtn" data-index="' + index + '">x</button>';
+
+      chipRow.appendChild(chip);
+    });
+
+    undoBtn.disabled = swatches.length === 0;
+    resetBtn.disabled = swatches.length === 0;
+
+    if (swatches.length === 0) {
+      hint.textContent = "Tap the garment's main color to start. Tap again anywhere to add an accent color.";
+    } else if (swatches.length >= MAX_SWATCHES) {
+      hint.textContent = 'Maximum of ' + MAX_SWATCHES + ' colors reached. Remove one to add another.';
+    } else {
+      hint.textContent = 'Tap to add an accent color, or remove one below.';
+    }
   }
+
+  chipRow.addEventListener('click', (event) => {
+    const target = event.target;
+    if (target.classList.contains('removeBtn')) {
+      const index = parseInt(target.getAttribute('data-index'), 10);
+      swatches.splice(index, 1);
+      renderChips();
+    }
+  });
+
+  undoBtn.addEventListener('click', () => {
+    swatches.pop();
+    renderChips();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    swatches = [];
+    renderChips();
+  });
 
   stage.addEventListener('click', (event) => {
     if (!currentStream) return;
+    if (event.target === switchBtn) return;
+    if (swatches.length >= MAX_SWATCHES) return;
 
     const rect = stage.getBoundingClientRect();
     showTapMarker(event.clientX - rect.left, event.clientY - rect.top);
@@ -393,7 +504,10 @@
     if (!videoCoords) return;
 
     const rgb = sampleColorAt(videoCoords.x, videoCoords.y);
-    displaySwatch(rgb);
+    const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+
+    swatches.push({ r: rgb.r, g: rgb.g, b: rgb.b, hex: hex });
+    renderChips();
   });
 
   window.addEventListener('beforeunload', stopCurrentStream);
