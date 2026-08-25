@@ -117,6 +117,27 @@
     display: block;
   }
 
+  /* Banner shown while the app is waiting for a tap on the white reference card */
+  #calibBanner {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(79, 124, 255, 0.92);
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: center;
+    display: none;
+    z-index: 5;
+  }
+
+  #calibBanner.visible {
+    display: block;
+  }
+
   /* Tap marker shown briefly where the user tapped */
   #tapMarker {
     position: absolute;
@@ -141,7 +162,7 @@
     z-index: 4;
   }
 
-  /* Bottom panel holding the swatch list and controls */
+  /* Bottom panel holding calibration status, the swatch list, and controls */
   #panel {
     background: var(--panel);
     border-top: 1px solid #262a35;
@@ -149,11 +170,58 @@
     flex-shrink: 0;
   }
 
+  #calibRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #262a35;
+  }
+
+  #calibSwatch {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: #000;
+    flex-shrink: 0;
+  }
+
+  #calibText {
+    flex: 1;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.3;
+  }
+
+  #calibText strong {
+    color: var(--text);
+    display: block;
+    font-size: 13px;
+  }
+
+  #calibBtn {
+    background: #2a2e3a;
+    color: var(--text);
+    font-size: 12px;
+    padding: 9px 12px;
+    white-space: nowrap;
+  }
+
+  #clearCalibBtn {
+    background: none;
+    color: var(--danger);
+    font-size: 12px;
+    padding: 9px 8px;
+    display: none;
+  }
+
   #hint {
     color: var(--muted);
     font-size: 13px;
     text-align: center;
-    padding: 6px 0 10px;
+    padding: 0 0 10px;
   }
 
   #chipRow {
@@ -254,10 +322,21 @@
 
     <div id="tapMarker"></div>
     <div id="status"></div>
+    <div id="calibBanner">Tap the white reference card</div>
     <button id="switchBtn">Switch camera</button>
   </div>
 
   <div id="panel">
+    <div id="calibRow">
+      <div id="calibSwatch"></div>
+      <div id="calibText">
+        <strong>No white reference set</strong>
+        Place a white card in frame and calibrate before scanning colors.
+      </div>
+      <button id="calibBtn">Calibrate</button>
+      <button id="clearCalibBtn">Clear</button>
+    </div>
+
     <div id="hint">Tap the garment's main color to start. Tap again anywhere to add an accent color.</div>
     <div id="chipRow"></div>
     <div id="controlRow">
@@ -278,6 +357,11 @@
   const placeholder = document.getElementById('placeholder');
   const statusEl = document.getElementById('status');
   const tapMarker = document.getElementById('tapMarker');
+  const calibBanner = document.getElementById('calibBanner');
+  const calibSwatch = document.getElementById('calibSwatch');
+  const calibText = document.getElementById('calibText');
+  const calibBtn = document.getElementById('calibBtn');
+  const clearCalibBtn = document.getElementById('clearCalibBtn');
   const hint = document.getElementById('hint');
   const chipRow = document.getElementById('chipRow');
   const undoBtn = document.getElementById('undoBtn');
@@ -288,10 +372,18 @@
   let currentStream = null;
   let facingMode = 'environment'; // rear camera by default
 
-  // Ordered list of sampled colors for the garment currently being captured.
-  // Position carries meaning: index 0 is the main/field color, every
-  // following entry is an accent (e.g. a stripe or trim color).
+  // Ordered list of sampled (and, if a reference is set, corrected) colors
+  // for the garment currently being captured. Position carries meaning:
+  // index 0 is the main/field color, every following entry is an accent.
   let swatches = [];
+
+  // Raw RGB read from the white reference card. Used to correct every
+  // garment sample for the current lighting. Null means uncalibrated.
+  let whiteReference = null;
+
+  // When true, the next tap on the video sets the white reference instead
+  // of adding a garment swatch.
+  let calibrationMode = false;
 
   const MAX_SWATCHES = 6;
 
@@ -433,11 +525,62 @@
     };
   }
 
+  // Scales a raw RGB reading so that whatever the white card read as becomes
+  // pure white (255,255,255). This corrects for the current light's color
+  // cast (warm indoor light, cool LED, shade, etc). Without a reference,
+  // the raw reading is returned unchanged.
+  function applyWhiteCorrection(raw) {
+    if (!whiteReference) return raw;
+
+    // Guard against a reference channel of 0, which would divide by zero;
+    // treat anything that dark as unusable for correction on that channel.
+    const refR = Math.max(1, whiteReference.r);
+    const refG = Math.max(1, whiteReference.g);
+    const refB = Math.max(1, whiteReference.b);
+
+    const clamp = (v) => Math.round(Math.max(0, Math.min(255, v)));
+
+    return {
+      r: clamp(raw.r * (255 / refR)),
+      g: clamp(raw.g * (255 / refG)),
+      b: clamp(raw.b * (255 / refB))
+    };
+  }
+
   function showTapMarker(x, y) {
     tapMarker.style.left = x + 'px';
     tapMarker.style.top = y + 'px';
     tapMarker.style.display = 'block';
   }
+
+  function updateCalibDisplay() {
+    if (whiteReference) {
+      const hex = rgbToHex(whiteReference.r, whiteReference.g, whiteReference.b);
+      calibSwatch.style.background = hex;
+      calibText.innerHTML = '<strong>Calibrated</strong>Reference read as ' + hex.toUpperCase() + '. Recalibrate if the light changes.';
+      calibBtn.textContent = 'Recalibrate';
+      clearCalibBtn.style.display = 'inline-block';
+    } else {
+      calibSwatch.style.background = '#000';
+      calibText.innerHTML = '<strong>No white reference set</strong>Place a white card in frame and calibrate before scanning colors.';
+      calibBtn.textContent = 'Calibrate';
+      clearCalibBtn.style.display = 'none';
+    }
+  }
+
+  calibBtn.addEventListener('click', () => {
+    if (!currentStream) {
+      showStatus('Start the camera first.');
+      return;
+    }
+    calibrationMode = true;
+    calibBanner.classList.add('visible');
+  });
+
+  clearCalibBtn.addEventListener('click', () => {
+    whiteReference = null;
+    updateCalibDisplay();
+  });
 
   // Renders the chip list from the swatches array. Label is derived purely
   // from position: the first swatch is always "Main", every later one is
@@ -494,8 +637,7 @@
 
   stage.addEventListener('click', (event) => {
     if (!currentStream) return;
-    if (event.target === switchBtn) return;
-    if (swatches.length >= MAX_SWATCHES) return;
+    if (event.target === switchBtn || event.target === calibBtn) return;
 
     const rect = stage.getBoundingClientRect();
     showTapMarker(event.clientX - rect.left, event.clientY - rect.top);
@@ -503,10 +645,22 @@
     const videoCoords = mapTapToVideoCoords(event.clientX, event.clientY);
     if (!videoCoords) return;
 
-    const rgb = sampleColorAt(videoCoords.x, videoCoords.y);
-    const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+    const raw = sampleColorAt(videoCoords.x, videoCoords.y);
 
-    swatches.push({ r: rgb.r, g: rgb.g, b: rgb.b, hex: hex });
+    if (calibrationMode) {
+      whiteReference = raw;
+      calibrationMode = false;
+      calibBanner.classList.remove('visible');
+      updateCalibDisplay();
+      return;
+    }
+
+    if (swatches.length >= MAX_SWATCHES) return;
+
+    const corrected = applyWhiteCorrection(raw);
+    const hex = rgbToHex(corrected.r, corrected.g, corrected.b);
+
+    swatches.push({ r: corrected.r, g: corrected.g, b: corrected.b, hex: hex });
     renderChips();
   });
 
