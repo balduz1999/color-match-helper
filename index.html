@@ -525,25 +525,25 @@
     };
   }
 
-  // Scales a raw RGB reading so that whatever the white card read as becomes
-  // pure white (255,255,255). This corrects for the current light's color
-  // cast (warm indoor light, cool LED, shade, etc). Without a reference,
-  // the raw reading is returned unchanged.
+  // Scales a raw RGB reading so the white card's color cast is removed,
+  // without inflating overall brightness. Gains are computed relative to
+  // the reference's own brightest channel (not 255), since the card rarely
+  // reads pure white under normal exposure - forcing it to 255 would push
+  // every subsequent reading toward maximum brightness along with it.
   function applyWhiteCorrection(raw) {
     if (!whiteReference) return raw;
 
-    // Guard against a reference channel of 0, which would divide by zero;
-    // treat anything that dark as unusable for correction on that channel.
     const refR = Math.max(1, whiteReference.r);
     const refG = Math.max(1, whiteReference.g);
     const refB = Math.max(1, whiteReference.b);
+    const refMax = Math.max(refR, refG, refB);
 
     const clamp = (v) => Math.round(Math.max(0, Math.min(255, v)));
 
     return {
-      r: clamp(raw.r * (255 / refR)),
-      g: clamp(raw.g * (255 / refG)),
-      b: clamp(raw.b * (255 / refB))
+      r: clamp(raw.r * (refMax / refR)),
+      g: clamp(raw.g * (refMax / refG)),
+      b: clamp(raw.b * (refMax / refB))
     };
   }
 
