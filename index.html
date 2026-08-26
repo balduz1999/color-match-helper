@@ -382,6 +382,50 @@
     cursor: default;
   }
 
+  #queryWardrobeBtn {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    padding: 12px;
+    margin-top: 10px;
+  }
+
+  #queryWardrobeBtn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .queryItem {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--chip-bg);
+    margin-bottom: 8px;
+  }
+
+  .queryBadge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 9px;
+    border-radius: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .queryBadge.good { background: rgba(63, 184, 114, 0.18); color: var(--good); }
+  .queryBadge.warn { background: rgba(217, 164, 65, 0.18); color: var(--warn); }
+  .queryBadge.bold { background: rgba(79, 124, 255, 0.18); color: var(--accent); }
+
+  .queryNotes {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+    padding-left: 2px;
+  }
+
   /* Comparison result modal */
   #compareModal {
     position: fixed;
@@ -666,6 +710,7 @@
 
     <button id="compareBtn" disabled>Compare Item A vs Item B</button>
     <button id="saveToWardrobeBtn" disabled>Save Item A to wardrobe</button>
+    <button id="queryWardrobeBtn" disabled>Check Item A against wardrobe</button>
   </div>
 </div>
 
@@ -711,6 +756,16 @@
     </div>
     <input type="file" id="importFileInput" accept="application/json" style="display:none;">
     <button id="closeWardrobeBtn" class="primaryBtn" style="width:100%; margin-top:10px;">Close</button>
+  </div>
+</div>
+
+<div id="queryModal" class="overlayModal">
+  <div class="overlaySheet">
+    <h2>Wardrobe matches</h2>
+    <div id="queryCalibNote" class="accentNote" style="display:none; margin-bottom:12px;">No white reference was set for this scan - readings may be skewed by the current light.</div>
+    <div id="queryEmpty" style="display:none;">Your wardrobe is empty. Save some garments first using the Wardrobe button, then come back and check against them here.</div>
+    <div id="queryList"></div>
+    <button id="closeQueryBtn" class="primaryBtn" style="width:100%; margin-top:10px;">Close</button>
   </div>
 </div>
 
@@ -762,6 +817,13 @@
   const importBtn = document.getElementById('importBtn');
   const importFileInput = document.getElementById('importFileInput');
   const closeWardrobeBtn = document.getElementById('closeWardrobeBtn');
+
+  const queryWardrobeBtn = document.getElementById('queryWardrobeBtn');
+  const queryModal = document.getElementById('queryModal');
+  const queryCalibNote = document.getElementById('queryCalibNote');
+  const queryEmpty = document.getElementById('queryEmpty');
+  const queryList = document.getElementById('queryList');
+  const closeQueryBtn = document.getElementById('closeQueryBtn');
 
   let currentStream = null;
   let facingMode = 'environment'; // rear camera by default
@@ -1029,6 +1091,8 @@
     resetBtn.disabled = swatches.length === 0;
     saveToWardrobeBtn.disabled = swatches.length === 0;
     saveToWardrobeBtn.textContent = 'Save Item ' + activeItem + ' to wardrobe';
+    queryWardrobeBtn.disabled = swatches.length === 0;
+    queryWardrobeBtn.textContent = 'Check Item ' + activeItem + ' against wardrobe';
 
     if (swatches.length === 0) {
       hint.textContent = "Tap " + activeItem + "'s main color to start. Tap again anywhere to add an accent color.";
@@ -1208,7 +1272,7 @@
   // Looks for accent colors in one item that closely echo a color (main or
   // accent) in the other item. An echo is one of the strongest, safest ways
   // to make an outfit look deliberate.
-  function findAccentEchoes(itemA, itemB) {
+  function findAccentEchoes(itemA, labelA, itemB, labelB) {
     const notes = [];
 
     function checkDirection(sourceItem, sourceLabel, targetItem, targetLabel) {
@@ -1232,8 +1296,8 @@
       });
     }
 
-    checkDirection(itemA, 'Item A', itemB, 'Item B');
-    checkDirection(itemB, 'Item B', itemA, 'Item A');
+    checkDirection(itemA, labelA, itemB, labelB);
+    checkDirection(itemB, labelB, itemA, labelA);
 
     return notes;
   }
@@ -1251,7 +1315,7 @@
     const lchB = rgbToLch(mainB.r, mainB.g, mainB.b);
 
     const verdict = compareMains(lchA, lchB);
-    const notes = findAccentEchoes(items.A, items.B);
+    const notes = findAccentEchoes(items.A, 'Item A', items.B, 'Item B');
 
     comparePair.innerHTML =
       '<div class="pairSwatch" style="background:' + mainA.hex + ';"></div>' +
@@ -1579,6 +1643,91 @@
     } finally {
       importFileInput.value = '';
     }
+  });
+
+  // --- Wardrobe query (scenario 2: "should I buy this?") -----------------
+  // Compares the currently scanned item's main color against every stored
+  // garment's main color, using the same rules as the two-item compare,
+  // then ranks results so the safest matches surface first.
+
+  const VERDICT_PRIORITY = { good: 0, bold: 1, warn: 2 };
+
+  async function runWardrobeQuery() {
+    const swatches = items[activeItem].swatches;
+    if (swatches.length === 0) return;
+
+    let entries = [];
+    try {
+      entries = await getAllGarments();
+    } catch (err) {
+      showStatus('Could not load wardrobe: ' + err.message);
+      return;
+    }
+
+    queryCalibNote.style.display = whiteReference ? 'none' : 'block';
+    queryList.innerHTML = '';
+
+    if (entries.length === 0) {
+      queryEmpty.style.display = 'block';
+      queryModal.classList.add('visible');
+      return;
+    }
+    queryEmpty.style.display = 'none';
+
+    const scannedMain = swatches[0];
+    const scannedLch = rgbToLch(scannedMain.r, scannedMain.g, scannedMain.b);
+
+    const results = entries.map((entry) => {
+      const entryMain = entry.colors[0];
+      if (!entryMain) return null;
+
+      const entryLch = rgbToLch(entryMain.r, entryMain.g, entryMain.b);
+      const verdict = compareMains(scannedLch, entryLch);
+      const notes = findAccentEchoes(
+        { swatches: swatches }, 'The scanned item',
+        { swatches: entry.colors }, entry.name
+      );
+
+      return { entry: entry, verdict: verdict, notes: notes };
+    }).filter(Boolean);
+
+    results.sort((a, b) => VERDICT_PRIORITY[a.verdict.level] - VERDICT_PRIORITY[b.verdict.level]);
+
+    results.forEach((result) => {
+      const dots = result.entry.colors.map((c) =>
+        '<div class="wardrobeDot" style="background:' + c.hex + ';"></div>'
+      ).join('');
+
+      let notesHtml = '';
+      if (result.notes.length > 0) {
+        notesHtml = '<div class="queryNotes">' +
+          result.notes.map((n) => '<div>' + escapeHtml(n) + '</div>').join('') +
+          '</div>';
+      }
+
+      const row = document.createElement('div');
+      row.className = 'queryItem';
+      row.innerHTML =
+        '<div style="display:flex; align-items:center; gap:10px;">' +
+        '<div class="wardrobeSwatches">' + dots + '</div>' +
+        '<div class="wardrobeInfo">' +
+        '<div class="wardrobeName">' + escapeHtml(result.entry.name) + '</div>' +
+        '<div class="wardrobeRole">' + result.entry.role + '</div>' +
+        '</div>' +
+        '<div class="queryBadge ' + result.verdict.level + '">' + result.verdict.headline + '</div>' +
+        '</div>' +
+        notesHtml;
+
+      queryList.appendChild(row);
+    });
+
+    queryModal.classList.add('visible');
+  }
+
+  queryWardrobeBtn.addEventListener('click', runWardrobeQuery);
+
+  closeQueryBtn.addEventListener('click', () => {
+    queryModal.classList.remove('visible');
   });
 
   window.addEventListener('beforeunload', stopCurrentStream);
