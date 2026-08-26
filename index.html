@@ -42,6 +42,18 @@
     font-weight: 600;
     letter-spacing: 0.02em;
     border-bottom: 1px solid #262a35;
+    position: relative;
+  }
+
+  #wardrobeBtn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #2a2e3a;
+    color: var(--text);
+    font-size: 12px;
+    padding: 8px 12px;
   }
 
   #stage {
@@ -349,9 +361,23 @@
     color: #06210f;
     font-size: 15px;
     padding: 13px;
+    margin-bottom: 10px;
   }
 
   #compareBtn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  #saveToWardrobeBtn {
+    width: 100%;
+    background: #2a2e3a;
+    color: var(--text);
+    font-size: 14px;
+    padding: 12px;
+  }
+
+  #saveToWardrobeBtn:disabled {
     opacity: 0.35;
     cursor: default;
   }
@@ -450,11 +476,152 @@
     background: #2a2e3a;
     color: var(--text);
   }
+
+  /* Generic bottom-sheet overlay, reused by the save and wardrobe modals */
+  .overlayModal {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 9, 12, 0.92);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 25;
+  }
+
+  .overlayModal.visible {
+    display: flex;
+  }
+
+  .overlaySheet {
+    width: 100%;
+    max-width: 480px;
+    background: var(--panel);
+    border-radius: 18px 18px 0 0;
+    padding: 20px 18px 26px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+
+  .overlaySheet h2 {
+    margin: 0 0 14px;
+    font-size: 16px;
+    text-align: center;
+  }
+
+  .fieldLabel {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin: 12px 0 5px;
+  }
+
+  #saveNameInput, #saveRoleSelect, .editNameInput, .editRoleSelect {
+    width: 100%;
+    padding: 11px;
+    border-radius: 8px;
+    border: 1px solid #333a48;
+    background: #20232c;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+  }
+
+  .editNameInput {
+    margin-bottom: 6px;
+  }
+
+  .miniBtnRow {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .primaryBtn {
+    flex: 1;
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .secondaryBtn {
+    flex: 1;
+    background: #2a2e3a;
+    color: var(--text);
+  }
+
+  #wardrobeEmpty {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 20px 0;
+  }
+
+  .wardrobeItem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--chip-bg);
+    margin-bottom: 8px;
+  }
+
+  .wardrobeSwatches {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .wardrobeDot {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+
+  .wardrobeInfo {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .wardrobeName {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .wardrobeRole {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: capitalize;
+  }
+
+  .wardrobeActions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .wardrobeActions button {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .editBtnSmall {
+    background: #333a48;
+    color: var(--text);
+  }
+
+  .deleteBtnSmall {
+    background: none;
+    color: var(--danger);
+  }
 </style>
 </head>
 <body>
 <div id="app">
-  <header>Color Match - Camera</header>
+  <header>
+    Color Match - Camera
+    <button id="wardrobeBtn">Wardrobe</button>
+  </header>
 
   <div id="stage">
     <video id="video" autoplay playsinline muted></video>
@@ -498,6 +665,7 @@
     </div>
 
     <button id="compareBtn" disabled>Compare Item A vs Item B</button>
+    <button id="saveToWardrobeBtn" disabled>Save Item A to wardrobe</button>
   </div>
 </div>
 
@@ -509,6 +677,40 @@
     <div id="verdictDetail"></div>
     <div id="accentNotes"></div>
     <button id="closeCompareBtn">Close</button>
+  </div>
+</div>
+
+<div id="saveModal" class="overlayModal">
+  <div class="overlaySheet">
+    <h2>Save to wardrobe</h2>
+    <label class="fieldLabel">Name</label>
+    <input type="text" id="saveNameInput" placeholder="e.g. Blue wool sweater">
+    <label class="fieldLabel">Role</label>
+    <select id="saveRoleSelect">
+      <option value="top">Top</option>
+      <option value="bottom">Bottom</option>
+      <option value="outer">Outerwear</option>
+      <option value="shoes">Shoes</option>
+      <option value="accessory">Accessory</option>
+    </select>
+    <div class="miniBtnRow">
+      <button id="cancelSaveBtn" class="secondaryBtn">Cancel</button>
+      <button id="confirmSaveBtn" class="primaryBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="wardrobeModal" class="overlayModal">
+  <div class="overlaySheet">
+    <h2>Wardrobe</h2>
+    <div id="wardrobeEmpty" style="display:none;">No garments saved yet.</div>
+    <div id="wardrobeList"></div>
+    <div class="miniBtnRow">
+      <button id="exportBtn" class="secondaryBtn">Export</button>
+      <button id="importBtn" class="secondaryBtn">Import</button>
+    </div>
+    <input type="file" id="importFileInput" accept="application/json" style="display:none;">
+    <button id="closeWardrobeBtn" class="primaryBtn" style="width:100%; margin-top:10px;">Close</button>
   </div>
 </div>
 
@@ -533,6 +735,7 @@
   const undoBtn = document.getElementById('undoBtn');
   const resetBtn = document.getElementById('resetBtn');
   const compareBtn = document.getElementById('compareBtn');
+  const saveToWardrobeBtn = document.getElementById('saveToWardrobeBtn');
   const tabA = document.getElementById('tabA');
   const tabB = document.getElementById('tabB');
   const tabDotA = document.getElementById('tabDotA');
@@ -545,6 +748,20 @@
   const closeCompareBtn = document.getElementById('closeCompareBtn');
   const canvas = document.getElementById('captureCanvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  const wardrobeBtn = document.getElementById('wardrobeBtn');
+  const saveModal = document.getElementById('saveModal');
+  const saveNameInput = document.getElementById('saveNameInput');
+  const saveRoleSelect = document.getElementById('saveRoleSelect');
+  const cancelSaveBtn = document.getElementById('cancelSaveBtn');
+  const confirmSaveBtn = document.getElementById('confirmSaveBtn');
+  const wardrobeModal = document.getElementById('wardrobeModal');
+  const wardrobeList = document.getElementById('wardrobeList');
+  const wardrobeEmpty = document.getElementById('wardrobeEmpty');
+  const exportBtn = document.getElementById('exportBtn');
+  const importBtn = document.getElementById('importBtn');
+  const importFileInput = document.getElementById('importFileInput');
+  const closeWardrobeBtn = document.getElementById('closeWardrobeBtn');
 
   let currentStream = null;
   let facingMode = 'environment'; // rear camera by default
@@ -564,6 +781,10 @@
   // When true, the next tap on the video sets the white reference instead
   // of adding a garment swatch.
   let calibrationMode = false;
+
+  // While set, the wardrobe list renders this entry's row as an inline
+  // name/role edit form instead of its normal display.
+  let editingGarmentId = null;
 
   const MAX_SWATCHES = 6;
 
@@ -806,6 +1027,8 @@
 
     undoBtn.disabled = swatches.length === 0;
     resetBtn.disabled = swatches.length === 0;
+    saveToWardrobeBtn.disabled = swatches.length === 0;
+    saveToWardrobeBtn.textContent = 'Save Item ' + activeItem + ' to wardrobe';
 
     if (swatches.length === 0) {
       hint.textContent = "Tap " + activeItem + "'s main color to start. Tap again anywhere to add an accent color.";
@@ -1060,6 +1283,302 @@
 
   closeCompareBtn.addEventListener('click', () => {
     compareModal.classList.remove('visible');
+  });
+
+  // --- Wardrobe storage (IndexedDB) ---------------------------------------
+  // Garments are stored as { id, name, role, colors: [{r,g,b,hex}, ...], createdAt }.
+  // Only the color values are kept, never a photo - a garment entry is a
+  // handful of numbers, not an image.
+
+  const DB_NAME = 'colorMatchDB';
+  const DB_VERSION = 1;
+  const STORE_NAME = 'garments';
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+        }
+      };
+
+      request.onsuccess = (event) => resolve(event.target.result);
+      request.onerror = (event) => reject(event.target.error);
+    });
+  }
+
+  async function addGarment(garment) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.add(garment);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function getAllGarments() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function updateGarment(id, changes) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result;
+        if (!existing) { reject(new Error('Garment not found')); return; }
+        const updated = Object.assign({}, existing, changes);
+        const putRequest = store.put(updated);
+        putRequest.onsuccess = () => resolve(updated);
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
+  async function deleteGarment(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // --- Save-to-wardrobe flow ----------------------------------------------
+
+  saveToWardrobeBtn.addEventListener('click', () => {
+    const swatches = items[activeItem].swatches;
+    if (swatches.length === 0) return;
+
+    saveNameInput.value = '';
+    saveRoleSelect.value = 'top';
+    saveModal.classList.add('visible');
+  });
+
+  cancelSaveBtn.addEventListener('click', () => {
+    saveModal.classList.remove('visible');
+  });
+
+  confirmSaveBtn.addEventListener('click', async () => {
+    const name = saveNameInput.value.trim();
+    if (!name) {
+      showStatus('Enter a name before saving.');
+      return;
+    }
+
+    const role = saveRoleSelect.value;
+    const colors = items[activeItem].swatches.map(s => ({ r: s.r, g: s.g, b: s.b, hex: s.hex }));
+
+    try {
+      await addGarment({ name: name, role: role, colors: colors, createdAt: Date.now() });
+      items[activeItem].swatches = [];
+      renderChips();
+      saveModal.classList.remove('visible');
+    } catch (err) {
+      showStatus('Could not save to wardrobe: ' + err.message);
+    }
+  });
+
+  // --- Wardrobe list, edit, delete -----------------------------------------
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function roleOptionsHtml(selectedRole) {
+    const roles = ['top', 'bottom', 'outer', 'shoes', 'accessory'];
+    return roles.map((r) =>
+      '<option value="' + r + '"' + (r === selectedRole ? ' selected' : '') + '>' +
+      r.charAt(0).toUpperCase() + r.slice(1) + '</option>'
+    ).join('');
+  }
+
+  async function refreshWardrobeList() {
+    let entries = [];
+    try {
+      entries = await getAllGarments();
+    } catch (err) {
+      showStatus('Could not load wardrobe: ' + err.message);
+      return;
+    }
+    renderWardrobeList(entries);
+  }
+
+  function renderWardrobeList(entries) {
+    wardrobeList.innerHTML = '';
+    wardrobeEmpty.style.display = entries.length === 0 ? 'block' : 'none';
+
+    entries.forEach((entry) => {
+      const row = document.createElement('div');
+      row.className = 'wardrobeItem';
+
+      if (editingGarmentId === entry.id) {
+        row.innerHTML =
+          '<div style="flex:1;">' +
+          '<input type="text" class="editNameInput" value="' + escapeHtml(entry.name) + '">' +
+          '<select class="editRoleSelect">' + roleOptionsHtml(entry.role) + '</select>' +
+          '</div>' +
+          '<div class="wardrobeActions">' +
+          '<button class="editBtnSmall saveEditBtn" data-id="' + entry.id + '">Save</button>' +
+          '<button class="deleteBtnSmall cancelEditBtn" data-id="' + entry.id + '">Cancel</button>' +
+          '</div>';
+      } else {
+        const dots = entry.colors.map((c) =>
+          '<div class="wardrobeDot" style="background:' + c.hex + ';"></div>'
+        ).join('');
+
+        row.innerHTML =
+          '<div class="wardrobeSwatches">' + dots + '</div>' +
+          '<div class="wardrobeInfo">' +
+          '<div class="wardrobeName">' + escapeHtml(entry.name) + '</div>' +
+          '<div class="wardrobeRole">' + entry.role + '</div>' +
+          '</div>' +
+          '<div class="wardrobeActions">' +
+          '<button class="editBtnSmall startEditBtn" data-id="' + entry.id + '">Edit</button>' +
+          '<button class="deleteBtnSmall deleteEntryBtn" data-id="' + entry.id + '">Delete</button>' +
+          '</div>';
+      }
+
+      wardrobeList.appendChild(row);
+    });
+  }
+
+  wardrobeList.addEventListener('click', async (event) => {
+    const target = event.target;
+    const idAttr = target.getAttribute('data-id');
+    if (idAttr === null) return;
+    const id = parseInt(idAttr, 10);
+
+    if (target.classList.contains('startEditBtn')) {
+      editingGarmentId = id;
+      await refreshWardrobeList();
+    } else if (target.classList.contains('cancelEditBtn')) {
+      editingGarmentId = null;
+      await refreshWardrobeList();
+    } else if (target.classList.contains('deleteEntryBtn')) {
+      const confirmed = window.confirm('Delete this garment from the wardrobe? This cannot be undone.');
+      if (!confirmed) return;
+      try {
+        await deleteGarment(id);
+        await refreshWardrobeList();
+      } catch (err) {
+        showStatus('Could not delete: ' + err.message);
+      }
+    } else if (target.classList.contains('saveEditBtn')) {
+      const row = target.closest('.wardrobeItem');
+      const newName = row.querySelector('.editNameInput').value.trim();
+      const newRole = row.querySelector('.editRoleSelect').value;
+      if (!newName) {
+        showStatus('Name cannot be empty.');
+        return;
+      }
+      try {
+        await updateGarment(id, { name: newName, role: newRole });
+        editingGarmentId = null;
+        await refreshWardrobeList();
+      } catch (err) {
+        showStatus('Could not update: ' + err.message);
+      }
+    }
+  });
+
+  wardrobeBtn.addEventListener('click', async () => {
+    wardrobeModal.classList.add('visible');
+    await refreshWardrobeList();
+  });
+
+  closeWardrobeBtn.addEventListener('click', () => {
+    editingGarmentId = null;
+    wardrobeModal.classList.remove('visible');
+  });
+
+  // --- Export / import -----------------------------------------------------
+
+  exportBtn.addEventListener('click', async () => {
+    let entries = [];
+    try {
+      entries = await getAllGarments();
+    } catch (err) {
+      showStatus('Could not export: ' + err.message);
+      return;
+    }
+
+    if (entries.length === 0) {
+      showStatus('Nothing to export yet.');
+      return;
+    }
+
+    const defaultName = 'wardrobe_export.json';
+    const fileName = window.prompt('File name for the export', defaultName) || defaultName;
+    const exportData = entries.map((e) => ({ name: e.name, role: e.role, colors: e.colors }));
+    const json = JSON.stringify(exportData, null, 2);
+
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName.endsWith('.json') ? fileName : (fileName + '.json');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  importBtn.addEventListener('click', () => {
+    importFileInput.click();
+  });
+
+  importFileInput.addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      if (!Array.isArray(parsed)) {
+        throw new Error('File does not contain a wardrobe list.');
+      }
+
+      let imported = 0;
+      for (const entry of parsed) {
+        if (!entry || typeof entry.name !== 'string' || !Array.isArray(entry.colors)) continue;
+        await addGarment({
+          name: entry.name,
+          role: entry.role || 'top',
+          colors: entry.colors,
+          createdAt: Date.now()
+        });
+        imported++;
+      }
+
+      await refreshWardrobeList();
+      showStatus('Imported ' + imported + ' garment(s).');
+    } catch (err) {
+      showStatus('Could not import file: ' + err.message);
+    } finally {
+      importFileInput.value = '';
+    }
   });
 
   window.addEventListener('beforeunload', stopCurrentStream);
